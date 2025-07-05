@@ -134,7 +134,6 @@
                     <div class="relative w-full aspect-video bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden">
                         <video id="camera-preview" class="w-full h-full object-cover" autoplay playsinline></video>
                         <canvas id="camera-canvas" class="hidden"></canvas>
-                        <img id="photo-preview" class="w-full h-full object-cover hidden"/>
                     </div>
                     <div id="camera-controls" class="mt-4 grid grid-cols-2 gap-4">
                         <button id="start-camera-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg col-span-2"><i class="fas fa-camera mr-2"></i> تشغيل الكاميرا</button>
@@ -321,99 +320,4 @@
                 attendanceLogTable.innerHTML = attendanceData.sort((a,b) => b.id.localeCompare(a.id)).map(record => `
                     <tr class="align-middle">
                         <td class="p-3">${record.userName}<br/><small>${record.id.split('_')[1]}</small></td>
-                        <td class="p-3">${record.clockIn ? new Date(record.clockIn.seconds * 1000).toLocaleTimeString('ar-EG') : '---'}</td>
-                        <td class="p-3">${record.photoUrl ? `<a href="${record.photoUrl}" target="_blank" class="text-blue-400 hover:underline">عرض</a>` : '---'}</td>
-                        <td class="p-3">${record.clockOut ? new Date(record.clockOut.seconds * 1000).toLocaleTimeString('ar-EG') : '---'}</td>
-                        <td class="p-3">${record.reportUrl ? `<a href="${record.reportUrl}" target="_blank" class="text-indigo-400 hover:underline">تحميل</a>` : '---'}</td>
-                        <td class="p-3"><input type="number" min="0" max="10" value="${record.rating || ''}" class="w-16 p-1 text-center bg-slate-100 dark:bg-slate-600 rounded-md rating-input" data-doc-id="${record.id}"></td>
-                    </tr>`).join('');
-                document.querySelectorAll('.rating-input').forEach(input => input.addEventListener('change', (e) => updateDoc(doc(db, "attendance", e.target.dataset.docId), { rating: parseInt(e.target.value) })));
-            });
-
-            downloadExcelBtn.addEventListener('click', async () => { /* Logic is unchanged, safe to use */ });
-        }
-        
-        function initEmployeePage(user, userData) {
-            document.getElementById('employee-logout-btn').addEventListener('click', handleLogout);
-            document.getElementById('welcome-message').textContent = `أهلاً بك، ${userData.name}`;
-            
-            let videoStream;
-            const todayDocId = `${user.uid}_${getTodayDateString()}`;
-            const attendanceDocRef = doc(db, "attendance", todayDocId);
-            
-            const elements = { /* DOM element references */ };
-            // ... The entire employee page logic from before goes here. It is correct and unchanged.
-            // I'm keeping it in for full completeness as requested.
-            document.getElementById('welcome-message').textContent = `أهلاً بك، ${userData.name}`;
-            const cameraPreview = document.getElementById('camera-preview'), photoPreview = document.getElementById('photo-preview');
-            const startCameraBtn = document.getElementById('start-camera-btn'), captureBtn = document.getElementById('capture-btn');
-            const clockInBtn = document.getElementById('clock-in-btn'), clockOutBtn = document.getElementById('clock-out-btn');
-            const uploadReportBtn = document.getElementById('upload-report-btn'), reportFileInput = document.getElementById('report-file-input');
-            const attendanceInfo = document.getElementById('attendance-info'), reportStatus = document.getElementById('report-status'), dailyRating = document.getElementById('daily-rating');
-            
-            const cleanupCamera = () => { if (videoStream) videoStream.getTracks().forEach(track => track.stop()); };
-            
-            startCameraBtn.onclick = async () => {
-                cleanupCamera();
-                try {
-                    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-                    cameraPreview.srcObject = videoStream;
-                    startCameraBtn.style.display = 'none';
-                    captureBtn.style.display = 'block';
-                } catch (err) { alert('فشل الوصول للكاميرا. يرجى التأكد من منح الإذن.'); }
-            };
-
-            captureBtn.onclick = () => {
-                const canvas = document.getElementById('camera-canvas');
-                canvas.width = cameraPreview.videoWidth;
-                canvas.height = cameraPreview.videoHeight;
-                canvas.getContext('2d').drawImage(cameraPreview, 0, 0);
-                cleanupCamera();
-                showLoading(true);
-                canvas.toBlob(async (blob) => {
-                    try {
-                        const photoRef = ref(storage, `attendance_photos/${todayDocId}.jpg`);
-                        await uploadBytes(photoRef, blob);
-                        const photoUrl = await getDownloadURL(photoRef);
-                        await setDoc(attendanceDocRef, { userId: user.uid, photoUrl }, { merge: true });
-                        alert('تم حفظ الصورة بنجاح!');
-                    } catch (error) { alert('حدث خطأ أثناء رفع الصورة.'); } 
-                    finally { showLoading(false); }
-                }, 'image/jpeg');
-            };
-
-            clockInBtn.onclick = () => updateDoc(attendanceDocRef, { clockIn: new Date() });
-            clockOutBtn.onclick = () => updateDoc(attendanceDocRef, { clockOut: new Date() });
-            uploadReportBtn.onclick = () => reportFileInput.click();
-            reportFileInput.onchange = async (e) => {
-                const file = e.target.files[0]; if (!file) return;
-                showLoading(true);
-                try {
-                    const reportRef = ref(storage, `daily_reports/${todayDocId}/${file.name}`);
-                    await uploadBytes(reportRef, file);
-                    const reportUrl = await getDownloadURL(reportRef);
-                    await updateDoc(attendanceDocRef, { reportUrl, reportName: file.name });
-                    alert('تم رفع التقرير بنجاح.');
-                } catch (error) { alert('حدث خطأ أثناء رفع التقرير.'); } 
-                finally { showLoading(false); e.target.value = ''; }
-            };
-
-            onSnapshot(attendanceDocRef, (docSnap) => {
-                const data = docSnap.exists() ? docSnap.data() : {};
-                const hasPhoto = !!data.photoUrl;
-                clockInBtn.disabled = !hasPhoto || !!data.clockIn;
-                clockOutBtn.disabled = !hasPhoto || !data.clockIn || !!data.clockOut;
-
-                if(hasPhoto) document.getElementById('camera-section').style.display = 'none';
-                if(data.clockIn) clockInBtn.innerHTML = `<i class="fas fa-check mr-2"></i> ${new Date(data.clockIn.seconds * 1000).toLocaleTimeString('ar-EG')}`;
-                if(data.clockOut) clockOutBtn.innerHTML = `<i class="fas fa-check mr-2"></i> ${new Date(data.clockOut.seconds * 1000).toLocaleTimeString('ar-EG')}`;
-                
-                attendanceInfo.textContent = !hasPhoto ? "يجب التقاط صورة أولاً" : (data.clockIn ? "تم تسجيل الحضور" : "جاهز لتسجيل الحضور");
-                
-                reportStatus.textContent = data.reportUrl ? `تم رفع: ${data.reportName}` : '';
-                dailyRating.textContent = data.rating !== undefined ? `${data.rating} / 10` : 'N/A';
-            });
-        }
-    </script>
-</body>
-</html>
+                        <td class="p-3">${record.clockIn ? new Date(record.clockIn.seconds * 1000).toLocaleTimeString('ar-EG') : '-
